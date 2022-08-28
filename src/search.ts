@@ -1,8 +1,8 @@
-import fetch from 'isomorphic-fetch';
-import {isBrowser} from 'browser-or-node';
-import {JSDOM} from 'jsdom';
-import AmazonSearchResult from './amazon-search-result';
-import htmlStringToDOMElement from './dom-parser';
+import fetch from "isomorphic-fetch";
+import { isBrowser } from "browser-or-node";
+import { JSDOM } from "jsdom";
+import AmazonSearchResult from "./amazon-search-result";
+import htmlStringToDOMElement from "./dom-parser";
 
 /**
  * Polyfills SharedArrayBuffer, which is disabled in Firefox (off by default), IE, Opera, Safari, and a whole host of
@@ -13,7 +13,7 @@ if (isBrowser) {
   const sab: any = function () {};
   sab.prototype.byteLength = {};
   sab.prototype.byteLength.get = () => {
-    throw new Error('Browser does not support SharedArrayBuffer');
+    throw new Error("Browser does not support SharedArrayBuffer");
   };
   window.SharedArrayBuffer = sab;
 }
@@ -26,7 +26,7 @@ export interface AllOriginsResponse {
     http_code: null;
     response_time: number;
     url: string;
-  }
+  };
 }
 
 /**
@@ -36,26 +36,32 @@ export interface AllOriginsResponse {
  * @returns {Array.<AmazonSearchResult>}
  */
 function extractResults(elem: ParentNode): AmazonSearchResult[] {
-  const resultNodeList = elem.querySelectorAll('div[data-component-type="s-search-result"]');
+  const resultNodeList = elem.querySelectorAll(
+    'div[data-component-type="s-search-result"]'
+  );
   const searchResultBlocks: Element[] = Array.from(resultNodeList);
-  return searchResultBlocks.map(searchResultBlock => {
+  return searchResultBlocks.map((searchResultBlock) => {
     return new AmazonSearchResult(searchResultBlock);
   });
 }
 
-function queryToRequest(query: string, page?: number): string {
+function queryToRequest(query: string, page?: number, region?: string): string {
   const queryParams: string[] = [
     `k=${encodeURIComponent(query)}`,
-    page ? `ref=sr_pg_${page}` : 'nb_sb_noss',
+    page ? `ref=sr_pg_${page}` : "nb_sb_noss",
   ];
-  if (page && page > 1) queryParams.push(`page=${page}`)
+  if (page && page > 1) queryParams.push(`page=${page}`);
 
-  return `https://www.amazon.com/s?${queryParams.join('&')}`;
+  return `https://www.amazon.${region ?? "com"}/s?${queryParams.join("&")}`;
 }
 
-function queryToProxiedRequest(query: string, page?: number): string {
-  let url = queryToRequest(query, page);
-  return 'http://api.allorigins.win/get?url=' + encodeURIComponent(url);
+function queryToProxiedRequest(
+  query: string,
+  page?: number,
+  region?: string
+): string {
+  let url = queryToRequest(query, page, region);
+  return "http://api.allorigins.win/get?url=" + encodeURIComponent(url);
 }
 
 function hasNextPage(elem: ParentNode, currentPage?: number): boolean {
@@ -73,6 +79,7 @@ export interface SearchData {
 export interface SearchConfig {
   page: number;
   includeSponsoredResults: boolean;
+  region: string;
 }
 
 /**
@@ -81,28 +88,32 @@ export interface SearchConfig {
  * @public
  * @param {string} query - What you'd type in to the Amazon search bar
  * @param {boolean=} includeSponsoredResults - Filters sponsored results by default
+ * @param {string} region - Use specific Amazon region (com, fr, it, ca ...), default is "com"
  * @returns {Promise<Array.<AmazonSearchResult>>}
  */
 async function searchAmazon(
   query: string,
   config?: Partial<SearchConfig>
 ): Promise<SearchData> {
-
   const currentPage = config?.page ?? 1;
   const searchData: SearchData = {
     searchResults: [],
     pageNumber: currentPage,
-    getNextPage: undefined
+    getNextPage: undefined,
   };
   let documentNode: ParentNode;
 
   if (isBrowser) {
-    const resp: Response = await fetch(queryToProxiedRequest(query, config?.page));
+    const resp: Response = await fetch(
+      queryToProxiedRequest(query, config?.page, config?.region)
+    );
     const body: AllOriginsResponse = await resp.json();
     const pageHtml = body.contents;
     documentNode = htmlStringToDOMElement(pageHtml);
   } else {
-    const resp: Response = await fetch(queryToRequest(query, config?.page));
+    const resp: Response = await fetch(
+      queryToRequest(query, config?.page, config?.region)
+    );
     const pageHtml = await resp.text();
     const virtualDOM = new JSDOM(pageHtml);
     documentNode = virtualDOM.window.document;
@@ -115,7 +126,9 @@ async function searchAmazon(
   }
 
   if (!config?.includeSponsoredResults) {
-    searchData.searchResults = searchData.searchResults.filter(result => !result.sponsored);
+    searchData.searchResults = searchData.searchResults.filter(
+      (result) => !result.sponsored
+    );
   }
   return searchData;
 }
